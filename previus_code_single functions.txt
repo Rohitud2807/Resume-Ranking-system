@@ -1,0 +1,98 @@
+
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pdfplumber
+import re
+import pandas as pd
+
+def extract_text_from_pdf(pdf_path):
+    text = ""
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+
+    return text
+
+
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^a-zA-Z\s]", "", text)
+    return text.strip()
+
+def load_job_description(jd_path):
+    with open(jd_path ,"r" , encoding ="utf-8") as file:
+        return file.read()
+
+def vectorize_text(resume_text , jd_text):
+    vectorizer = TfidfVectorizer()
+    vectors = vectorizer.fit_transform([resume_text,jd_text])
+    return vectors , vectorizer
+
+def calculate_cosine_similarity(vectors):
+    similarity = cosine_similarity(vectors[0] , vectors[1])
+    return similarity[0][0]
+
+def extract_skills(text , skills_list):
+    extracted = []
+    for skill in skills_list:
+        if skill in text:
+            extracted.append(skill)
+    return list(set(extracted))
+
+def load_skills(skill_path):
+    df = pd.read_csv(skill_path)
+    return df["skill"].str.lower().tolist()
+
+if __name__ == "__main__":
+    pdf_path = "data/sample_resumes/resume1.pdf"
+
+    raw_text = extract_text_from_pdf(pdf_path)
+    cleaned_text = clean_text(raw_text)
+
+    print("------ RAW TEXT ------")
+    print(raw_text[:1000])   # print first 1000 chars
+
+    print("\n------ CLEANED TEXT ------")
+    print(cleaned_text[:1000])
+
+# job description
+    jd_path = "data/job_descriptions/jd1.txt"
+    jd_text = load_job_description(jd_path)
+    cleaned_jd = clean_text(jd_text)
+
+    print("\n---- Cleaned JD text ----")
+    print(cleaned_jd)
+
+#TF - IDF vectorization
+vectors , vectorizer = vectorize_text(cleaned_text , cleaned_jd)
+print("---- TF-IDF shape -----")
+print(vectors.shape) # dimension of tfidf
+
+print("\n--- sample features ---")
+print(vectorizer.get_feature_names_out()[:15])
+
+#cosine similarity
+similarity_score = calculate_cosine_similarity(vectors)
+print("\n --- resume&jd match score ---")
+print(f"match percentage:{round(similarity_score*100,2)}%")
+
+#skill matching
+
+skills = load_skills("data/skills.csv")
+resume_skills = extract_skills(cleaned_text, skills)
+jd_skills = extract_skills(cleaned_jd, skills)
+matched_skills = list(set(resume_skills) & set(jd_skills))
+missing_skills = list(set(jd_skills) - set(resume_skills))
+skills_score = (len(matched_skills)/len(jd_skills)) * 100 if jd_skills else 0 
+print("\n--- Skill Matching ---")
+print("Matched Skills:", matched_skills)
+print("Missing Skills:", missing_skills)
+print(f"Skill Match Percentage: {round(skills_score, 2)}%")
+
+final_score = (0.7  * similarity_score * 100) + (0.3 * skills_score)
+print("\n --- Final Resume Score ---")
+print(f"FInal Score : {round(final_score , 2)}%")
